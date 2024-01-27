@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <termios.h>
@@ -47,6 +48,13 @@ char readChar() {
     return c;
 }
 
+char readIfReady() {
+    struct pollfd fd = { .fd = STDIN_FILENO, .events = POLLIN };
+    if (poll (&fd, 1, 0) == 1)
+        return readChar();
+    return 0x00;
+}
+
 int handleCommandSeq(struct key_chord *chord){
     char c;
     while (true) {
@@ -66,11 +74,95 @@ int handleCommandSeq(struct key_chord *chord){
     }
 }
 
-void handleEscapeSeq() {
-    char one = readChar(),
-         two = readChar();
-    printf("Escape code %x %x\n", one, two);
-    return;
+bool escapeSeq(char c, struct key_chord *chord) {
+    // https://github.com/snaptoken/kilo-src/blob/propagate-highlight/kilo.c#L162
+    if (c != 0x1b)
+        return false;
+
+    char one = readIfReady(),
+         two = readIfReady();
+    if (!one)
+        return false;
+    if (!two) {
+        printf("Unexpected two character escape sequence: %x %x\n", c, one);
+        return false;
+    }
+    chord->shift = chord->ctrl = chord->alt = false;
+    if (one == '[') {
+        if ('0' <= two && two <= '9') {
+            char three = readIfReady();
+            if (!three) {
+                printf("Unexpected three character escape sequence: %x %x %x\n",
+                       c, one, two);
+                return false;
+            }
+            if (three == '~') {
+                switch (two) {
+                  case '1':
+                    chord->code = KEY_HOME;
+                    return true;
+                  case '2':
+                    chord->code = KEY_INSERT;
+                    return true;
+                  case '3':
+                    chord->code = KEY_DELETE;
+                    return true;
+                  case '4':
+                    chord->code = KEY_END;
+                    return true;
+                  case '5':
+                    chord->code = KEY_PAGEUP;
+                    return true;
+                  case '6':
+                    chord->code = KEY_PAGEDOWN;
+                    return true;
+                  case '7':
+                    chord->code = KEY_HOME;
+                    return true;
+                  case '8':
+                    chord->code = KEY_END;
+                    return true;
+                  default:
+                    printf("Unexpected four character escape sequence: %x %x %x %x\n",
+                        c, one, two, three);
+                    return false;
+                }
+            }
+        } else {
+            switch (two) {
+              case 'A':
+                chord->code = KEY_UP;
+                return true;
+              case 'B':
+                chord->code = KEY_DOWN;
+                return true;
+              case 'C':
+                chord->code = KEY_RIGHT;
+                return true;
+              case 'D':
+                chord->code = KEY_LEFT;
+                return true;
+              case 'H':
+                chord->code = KEY_HOME;
+                return true;
+              case 'F':
+                chord->code = KEY_END;
+                return true;
+            }
+        }
+    } else if (one == 'O') {
+        switch(two) {
+          case 'H':
+            chord->code = KEY_HOME;
+            return true;
+          case 'F':
+            chord->code = KEY_END;
+            return true;
+        }
+    }
+    printf("Unexpected three character escape sequence: %x %x %x\n",
+            c, one, two);
+    return false;
 }
 
 void printCharCode(char c) {
@@ -79,6 +171,17 @@ void printCharCode(char c) {
     } else {
         printf("%x ('%c')\n", c, c);
     }
+}
+
+bool carriageReturn(char c, struct key_chord *chord) {
+    // carriageReturns are 0x0d == Ctrl-M, so we have to catch this before handling the
+    // control character codes
+    if (c != '\r')
+        return false;
+
+    chord->code = KEY_ENTER;
+    chord->shift = chord->ctrl = chord->alt = false;
+    return true;
 }
 
 int alphaCode(char c) {
@@ -350,16 +453,15 @@ int main() {
     while (1) {
         char c = readChar();
         struct key_chord chord;
-        if (c == 0x1b) {
-            handleEscapeSeq();
-        } else if (c == 0x02) { // Ctrl-B to spark command sequence
+        if (c == 0x02) { // Ctrl-B to spark command sequence
             int resp = handleCommandSeq(&chord);
             if (resp == -1)
                 break;
             if (resp == 0)
                 continue;
             emitChord(&chord);
-        } else if (alphaChord(c, &chord) || symbolChord(c, &chord)) {
+        } else if (carriageReturn(c, &chord) || escapeSeq(c, &chord)
+                   || alphaChord(c, &chord) || symbolChord(c, &chord)) {
             emitChord(&chord);
         } else {
             printCharCode(c);
