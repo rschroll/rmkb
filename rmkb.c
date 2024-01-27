@@ -24,6 +24,10 @@ struct key_chord {
     bool alt;
 };
 
+bool global_shift = false,
+     global_ctrl  = false,
+     global_alt   = false;
+
 void die(const char *s) {
     perror(s);
     exit(1);
@@ -106,18 +110,30 @@ int createKeyboardDevice() {
 int handleCommandSeq(struct key_chord *chord){
     char c;
     while (true) {
-        printf("Type `q` to quit, `c` to continue, or `Ctrl-b` to emit `Ctrl-b`.\n");
+        printf("Type `q` to quit, `r` to resume, or `Ctrl-b` to emit `Ctrl-b`.\n");
+        printf("Type `s` to turn shift %s, `c` to turn ctrl %s, or `a` to turn alt %s.\n",
+               global_shift ? "OFF" : "ON", global_ctrl ? "OFF" : "ON",
+               global_alt ? "OFF" : "ON");
         c = readChar();
         switch (c) {
           case 'q':
             return -1;
-          case 'c':
+          case 'r':
             return 0;
           case 0x02:
             chord->code = KEY_B;
             chord->shift = chord->alt = false;
             chord->ctrl = true;
             return 1;
+          case 's':
+            global_shift = !global_shift;
+            return 0;
+          case 'c':
+            global_ctrl = !global_ctrl;
+            return 0;
+          case 'a':
+            global_alt = !global_alt;
+            return 0;
         }
     }
 }
@@ -499,15 +515,15 @@ void writeEventVals(int fd, unsigned short type, unsigned short code, signed int
 void emitChord(int fd, struct key_chord *chord) {
     printf("Key %i, shift %i, ctrl %i, alt %i\n", chord->code, chord->shift,
             chord->ctrl, chord->alt);
-    if (chord->ctrl) {
+    if (chord->ctrl || global_ctrl) {
         writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->alt) {
+    if (chord->alt || global_alt) {
         writeEventVals(fd, EV_KEY, KEY_LEFTALT, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->shift) {
+    if (chord->shift || global_shift) {
         writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
@@ -515,15 +531,15 @@ void emitChord(int fd, struct key_chord *chord) {
     writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     writeEventVals(fd, EV_KEY, chord->code, 0);
     writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
-    if (chord->shift) {
+    if (chord->shift || global_shift) {
         writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->alt) {
+    if (chord->alt || global_alt) {
         writeEventVals(fd, EV_KEY, KEY_LEFTALT, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->ctrl) {
+    if (chord->ctrl || global_ctrl) {
         writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
