@@ -1,11 +1,17 @@
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
 #include <linux/input.h>
+#include <linux/uinput.h>
+
+#define UINPUT_DEVICE   "/dev/uinput"
 
 // https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 
@@ -53,6 +59,48 @@ char readIfReady() {
     if (poll (&fd, 1, 0) == 1)
         return readChar();
     return 0x00;
+}
+
+int createKeyboardDevice() {
+    // https://stackoverflow.com/questions/40676172/how-to-generate-key-strokes-events-with-the-input-subsystem
+    int fd_key_emulator;
+    struct uinput_user_dev dev_fake_keyboard = {
+        .name = "kb-emulator",
+        .id = {.bustype = BUS_USB, .vendor = 0x01, .product = 0x01, .version = 1}
+    };
+
+    // Open the uinput device
+    fd_key_emulator = open(UINPUT_DEVICE, O_WRONLY | O_NONBLOCK);
+    if (fd_key_emulator < 0) {
+        fprintf(stderr, "Error in opening uinput: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // Enable all of the events we will need
+    if (ioctl(fd_key_emulator, UI_SET_EVBIT, EV_KEY)
+        || ioctl(fd_key_emulator, UI_SET_EVBIT, EV_SYN)) {
+        fprintf(stderr, "Error in ioctl sets: %s\n", strerror(errno));
+        return -1;
+    }
+    for (int code = 1; code <= 120; code++) {
+        if (ioctl(fd_key_emulator, UI_SET_KEYBIT, code)) {
+            fprintf(stderr, "Error in ioctl set for code %d: %s\n", code, strerror(errno));
+        }
+    }
+
+    // Write the uinput_user_dev structure into uinput file descriptor
+    if (write(fd_key_emulator, &dev_fake_keyboard, sizeof(struct uinput_user_dev)) < 0) {
+        fprintf(stderr, "Error in write(): uinput_user_dev struct into uinput file descriptor: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // Create the device via an IOCTL call
+    if (ioctl(fd_key_emulator, UI_DEV_CREATE)) {
+        fprintf(stderr, "Error in ioctl : UI_DEV_CREATE : %s\n", strerror(errno));
+        return -1;
+    }
+
+    return fd_key_emulator;
 }
 
 int handleCommandSeq(struct key_chord *chord){
@@ -436,19 +484,58 @@ bool symbolChord(char c, struct key_chord *chord) {
         chord->shift = true;
         return true;
       case 0x7f:
-        chord->code = KEY_DELETE;
+        chord->code = KEY_BACKSPACE;
         return true;
     }
     return false;
 }
 
-void emitChord(struct key_chord *chord) {
+void writeEventVals(int fd, unsigned short type, unsigned short code, signed int value) {
+    struct input_event event = (struct input_event) {.type=type, .code=code, .value=value};
+    gettimeofday(&event.time, NULL);
+    write(fd, &event, sizeof(struct input_event));
+}
+
+void emitChord(int fd, struct key_chord *chord) {
     printf("Key %i, shift %i, ctrl %i, alt %i\n", chord->code, chord->shift,
             chord->ctrl, chord->alt);
+    if (chord->ctrl) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 1);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
+    if (chord->alt) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTALT, 1);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
+    if (chord->shift) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 1);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
+    writeEventVals(fd, EV_KEY, chord->code, 1);
+    writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    writeEventVals(fd, EV_KEY, chord->code, 0);
+    writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    if (chord->shift) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 0);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
+    if (chord->alt) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTALT, 0);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
+    if (chord->ctrl) {
+        writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 0);
+        writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
+    }
 }
 
 int main() {
     enableRawMode();
+    int fd_keyboard = createKeyboardDevice();
+    if (fd_keyboard == -1) {
+        fprintf(stderr, "Error creating emulated keyboard.\n");
+        return -1;
+    }
 
     while (1) {
         char c = readChar();
@@ -459,10 +546,10 @@ int main() {
                 break;
             if (resp == 0)
                 continue;
-            emitChord(&chord);
+            emitChord(fd_keyboard, &chord);
         } else if (carriageReturn(c, &chord) || escapeSeq(c, &chord)
                    || alphaChord(c, &chord) || symbolChord(c, &chord)) {
-            emitChord(&chord);
+            emitChord(fd_keyboard, &chord);
         } else {
             printCharCode(c);
         }
