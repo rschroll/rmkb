@@ -24,9 +24,15 @@ struct key_chord {
     bool alt;
 };
 
-bool global_shift = false,
-     global_ctrl  = false,
-     global_alt   = false;
+bool shift_next  = false,
+     ctrl_next   = false,
+     alt_next    = false,
+     shift_latch = false,
+     ctrl_latch  = false,
+     alt_latch   = false;
+
+bool verbose = false;
+#define Vprintf verbose && printf
 
 void die(const char *s) {
     perror(s);
@@ -107,34 +113,66 @@ int createKeyboardDevice() {
     return fd_key_emulator;
 }
 
+void printStatus() {
+    printf("\r%c%c%c  ", shift_next ? 'S' : 's', ctrl_next ? 'C' : 'c', alt_next ? 'A' : 'a');
+    fflush(stdout);
+}
+
 int handleCommandSeq(struct key_chord *chord){
     char c;
     while (true) {
-        printf("Type `q` to quit, `r` to resume, or `Ctrl-b` to emit `Ctrl-b`.\n");
-        printf("Type `s` to turn shift %s, `c` to turn ctrl %s, or `a` to turn alt %s.\n",
-               global_shift ? "OFF" : "ON", global_ctrl ? "OFF" : "ON",
-               global_alt ? "OFF" : "ON");
+        printf("\b?");
+        fflush(stdout);
         c = readChar();
         switch (c) {
           case 'q':
+            printf("\n");
             return -1;
           case 'r':
             return 0;
-          case 0x02:
-            chord->code = KEY_B;
+          case 0x11:
+            chord->code = KEY_Q;
             chord->shift = chord->alt = false;
             chord->ctrl = true;
             return 1;
           case 's':
-            global_shift = !global_shift;
+            shift_next = !shift_next;
+            return 0;
+          case 'S':
+            shift_latch = !shift_latch;
+            shift_next = shift_latch;
             return 0;
           case 'c':
-            global_ctrl = !global_ctrl;
+            ctrl_next = !ctrl_next;
+            return 0;
+          case 'C':
+            ctrl_latch = !ctrl_latch;
+            ctrl_next = ctrl_latch;
             return 0;
           case 'a':
-            global_alt = !global_alt;
+            alt_next = !alt_next;
             return 0;
+          case 'A':
+            alt_latch = !alt_latch;
+            alt_next = alt_latch;
+            return 0;
+          case 'h':
+          case '?':
+            printf(" Control mode: recognized keystrokes\n");
+            printf("\tq\tQuit\n");
+            printf("\tr\tLeave control mode, resume normal mode\n");
+            printf("\ts\tTurn SHIFT %s for next input\n", shift_next ? "OFF" : "ON");
+            printf("\tS\tLatch SHIFT %s for future inputs\n", shift_latch ? "OFF" : "ON");
+            printf("\tc\tTurn CTRL %s for next input\n", ctrl_next ? "OFF" : "ON");
+            printf("\tC\tLatch CTRL %s for future inputs\n", ctrl_latch ? "OFF" : "ON");
+            printf("\ta\tTurn ALT %s for next input\n", alt_next ? "OFF" : "ON");
+            printf("\tA\tLatch ALT %s for future inputs\n", alt_latch ? "OFF" : "ON");
+            printf("\tCtrl-q\tEmit a CTRL-q character\n");
+            break;
+          default:
+            printf(" Unrecognized command.  Type `h` for help.\n");
         }
+        printStatus();
     }
 }
 
@@ -513,17 +551,17 @@ void writeEventVals(int fd, unsigned short type, unsigned short code, signed int
 }
 
 void emitChord(int fd, struct key_chord *chord) {
-    printf("Key %i, shift %i, ctrl %i, alt %i\n", chord->code, chord->shift,
-            chord->ctrl, chord->alt);
-    if (chord->ctrl || global_ctrl) {
+    Vprintf("Key %i, shift %i, ctrl %i, alt %i\n", chord->code, chord->shift,
+             chord->ctrl, chord->alt);
+    if (chord->ctrl || ctrl_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->alt || global_alt) {
+    if (chord->alt || alt_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTALT, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->shift || global_shift) {
+    if (chord->shift || shift_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 1);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
@@ -531,21 +569,31 @@ void emitChord(int fd, struct key_chord *chord) {
     writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     writeEventVals(fd, EV_KEY, chord->code, 0);
     writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
-    if (chord->shift || global_shift) {
+    if (chord->shift || shift_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTSHIFT, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->alt || global_alt) {
+    if (chord->alt || alt_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTALT, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
-    if (chord->ctrl || global_ctrl) {
+    if (chord->ctrl || ctrl_next) {
         writeEventVals(fd, EV_KEY, KEY_LEFTCTRL, 0);
         writeEventVals(fd, EV_SYN, SYN_REPORT, 0);
     }
+    shift_next = shift_latch;
+    ctrl_next = ctrl_latch;
+    alt_next = alt_latch;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        if (!strncmp(argv[i], "--verbose", 9) || !strncmp(argv[i], "-v", 2))
+            verbose = true;
+        else
+            printf("Unknown argument ignored: %s\n", argv[i]);
+    }
+
     enableRawMode();
     int fd_keyboard = createKeyboardDevice();
     if (fd_keyboard == -1) {
@@ -554,9 +602,10 @@ int main() {
     }
 
     while (1) {
+        printStatus();
         char c = readChar();
         struct key_chord chord;
-        if (c == 0x02) { // Ctrl-B to spark command sequence
+        if (c == 0x11) { // Ctrl-q to spark command sequence
             int resp = handleCommandSeq(&chord);
             if (resp == -1)
                 break;
