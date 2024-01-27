@@ -1,5 +1,4 @@
 #include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -35,27 +34,23 @@ void enableRawMode() {
     atexit(disableRawMode);
     struct termios raw = orig_termios;
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    raw.c_oflag &= ~(OPOST);
     raw.c_cflag |= (CS8);
     raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    raw.c_cc[VMIN] = 0;
-    raw.c_cc[VTIME] = 1;
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
         die("tcsetattr");
 }
 
 char readChar() {
     char c = '\0';
-    while (!c)
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
-            die("read");
+    if (read(STDIN_FILENO, &c, 1) == -1)
+        die("read");
     return c;
 }
 
 int handleCommandSeq(struct key_chord *chord){
     char c;
     while (true) {
-        printf("Type `q` to quit, `c` to continue, or `Ctrl-b` to emit `Ctrl-b`.\r\n");
+        printf("Type `q` to quit, `c` to continue, or `Ctrl-b` to emit `Ctrl-b`.\n");
         c = readChar();
         switch (c) {
           case 'q':
@@ -74,15 +69,15 @@ int handleCommandSeq(struct key_chord *chord){
 void handleEscapeSeq() {
     char one = readChar(),
          two = readChar();
-    printf("Escape code %x %x\r\n", one, two);
+    printf("Escape code %x %x\n", one, two);
     return;
 }
 
 void printCharCode(char c) {
     if (iscntrl(c)) {
-        printf("%x\r\n", c);
+        printf("%x\n", c);
     } else {
-        printf("%x ('%c')\r\n", c, c);
+        printf("%x ('%c')\n", c, c);
     }
 }
 
@@ -345,7 +340,7 @@ bool symbolChord(char c, struct key_chord *chord) {
 }
 
 void emitChord(struct key_chord *chord) {
-    printf("Key %i, shift %i, ctrl %i, alt %i\r\n", chord->code, chord->shift,
+    printf("Key %i, shift %i, ctrl %i, alt %i\n", chord->code, chord->shift,
             chord->ctrl, chord->alt);
 }
 
