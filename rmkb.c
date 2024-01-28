@@ -13,6 +13,8 @@
 
 #define UINPUT_DEVICE   "/dev/uinput"
 
+#define VERSION "0.1"
+
 // https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 
 struct termios orig_termios;
@@ -645,10 +647,14 @@ void emitChord(int fd, struct key_chord *chord) {
 
 int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
-        if (!strncmp(argv[i], "--verbose", 9) || !strncmp(argv[i], "-v", 2))
+        if (!strncmp(argv[i], "--verbose", 9) || !strncmp(argv[i], "-v", 2)) {
             verbose = true;
-        else
+        } else if (!strncmp(argv[i], "--version", 9)) {
+            printf("rmkb v%s\n", VERSION);
+            return 0;
+        } else {
             printf("Unknown argument ignored: %s\n", argv[i]);
+        }
     }
 
     enableRawMode();
