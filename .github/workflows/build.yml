@@ -1,0 +1,25 @@
+name: build
+
+on: [push]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          wget https://storage.googleapis.com/remarkable-codex-toolchain/remarkable-platform-image-4.0.117-rm2-public-x86_64-toolchain.sh -O /tmp/toolchain.sh
+          sh /tmp/toolchain.sh -y
+      - name: Build binary
+        run: |
+          source /opt/codex/rm2/4.0.117/environment-setup-cortexa7hf-neon-remarkable-linux-gnueabi
+          make
+      - name: Archive binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmkb-binary
+          path: rmkb
