@@ -34,9 +34,13 @@ jobs:
           release_name: Version ${{ github.ref_name }}
           draft: false
           prerelease: false
+      - name: Binary hash
+        id: binary_hash
+        if: steps.create_release.outcome == 'success'
+        run: sha256sum rmkb
       - name: Upload release binary
         id: upload_release
-        if: steps.create_release.outcome == 'success'
+        if: steps.binary_hash.outcome == 'success'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
