@@ -57,6 +57,14 @@ void enableRawMode() {
         die("tcsetattr");
 }
 
+void printCharCode(char c) {
+    if (iscntrl(c)) {
+        printf("%x\n", c);
+    } else {
+        printf("%x ('%c')\n", c, c);
+    }
+}
+
 char readChar() {
     char c = '\0';
     if (read(STDIN_FILENO, &c, 1) == -1)
@@ -181,105 +189,6 @@ int handleCommandSeq(struct key_chord *chord){
             printf(" Unrecognized command.  Type `h` for help.\n");
         }
         printStatus();
-    }
-}
-
-bool escapeSeq(char c, struct key_chord *chord) {
-    // https://github.com/snaptoken/kilo-src/blob/propagate-highlight/kilo.c#L162
-    if (c != 0x1b)
-        return false;
-
-    char one = readIfReady(),
-         two = readIfReady();
-    if (!one)
-        return false;
-    if (!two) {
-        printf("Unexpected two character escape sequence: %x %x\n", c, one);
-        return false;
-    }
-    chord->shift = chord->ctrl = chord->alt = false;
-    if (one == '[') {
-        if ('0' <= two && two <= '9') {
-            char three = readIfReady();
-            if (!three) {
-                printf("Unexpected three character escape sequence: %x %x %x\n",
-                       c, one, two);
-                return false;
-            }
-            if (three == '~') {
-                switch (two) {
-                  case '1':
-                    chord->code = KEY_HOME;
-                    return true;
-                  case '2':
-                    chord->code = KEY_INSERT;
-                    return true;
-                  case '3':
-                    chord->code = KEY_DELETE;
-                    return true;
-                  case '4':
-                    chord->code = KEY_END;
-                    return true;
-                  case '5':
-                    chord->code = KEY_PAGEUP;
-                    return true;
-                  case '6':
-                    chord->code = KEY_PAGEDOWN;
-                    return true;
-                  case '7':
-                    chord->code = KEY_HOME;
-                    return true;
-                  case '8':
-                    chord->code = KEY_END;
-                    return true;
-                  default:
-                    printf("Unexpected four character escape sequence: %x %x %x %x\n",
-                        c, one, two, three);
-                    return false;
-                }
-            }
-        } else {
-            switch (two) {
-              case 'A':
-                chord->code = KEY_UP;
-                return true;
-              case 'B':
-                chord->code = KEY_DOWN;
-                return true;
-              case 'C':
-                chord->code = KEY_RIGHT;
-                return true;
-              case 'D':
-                chord->code = KEY_LEFT;
-                return true;
-              case 'H':
-                chord->code = KEY_HOME;
-                return true;
-              case 'F':
-                chord->code = KEY_END;
-                return true;
-            }
-        }
-    } else if (one == 'O') {
-        switch(two) {
-          case 'H':
-            chord->code = KEY_HOME;
-            return true;
-          case 'F':
-            chord->code = KEY_END;
-            return true;
-        }
-    }
-    printf("Unexpected three character escape sequence: %x %x %x\n",
-            c, one, two);
-    return false;
-}
-
-void printCharCode(char c) {
-    if (iscntrl(c)) {
-        printf("%x\n", c);
-    } else {
-        printf("%x ('%c')\n", c, c);
     }
 }
 
@@ -550,6 +459,146 @@ bool symbolChord(char c, struct key_chord *chord) {
         return true;
     }
     return false;
+}
+
+void setModifiers(int m, struct key_chord *chord) {
+    // 1 is the "null" value, but if it wasn't specified, we'll get a zero here.
+    if (m != 0)
+        m -= 1;
+    chord->shift = 0x01 & m;
+    chord->alt   = 0x02 & m;
+    chord->ctrl  = 0x04 & m;
+}
+
+bool escapeSeq(char c, struct key_chord *chord) {
+    // https://github.com/snaptoken/kilo-src/blob/propagate-highlight/kilo.c#L162
+    if (c != 0x1b)
+        return false;
+
+    char next = readIfReady();
+    if (!next)
+        return false;
+
+    chord->shift = chord->ctrl = chord->alt = false;
+    if (next == '[') {
+        // https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_input_sequences
+        // This could be a VT sequence: ^[nn~ or ^[nn;m~
+        // Or an xterm sequence: ^[C or ^[mC
+        //  nn  is a one or two digit decimal number (as ASCII)
+        //  m   is an ASCII digit showing modifiers (m-1 is bitmask SHIFT (lsb), ALT, CTRL, META)
+        //  C   is an ASCII letter
+        //  ^   is the escape character, 0x1b
+        next = readIfReady();
+        if (!next) {
+            // ^[ May mean Alt-[
+            chord->alt = true;
+            chord->code = KEY_LEFTBRACE;
+            return true;
+        }
+        int code = 0,
+            modifiers = 0;
+        printf("%d\n", code);
+        while isdigit(next) {
+            // Assume this is a VT sequence
+            code = code * 10 + (next - '0');
+            next = readIfReady();
+            if (!next) {
+                printf("Unexpected end in escape sequence: ^[%d.\n", code);
+                return false;
+            }
+        }
+        if (next == ';') {
+            // Modifier number coming up
+            next = readIfReady();
+            if (!next) {
+                printf("Unknown VT sequence: ^[%d;\n", code);
+                return false;
+            }
+            while (isdigit(next)) {
+                modifiers = 10 * modifiers + (next - '0');
+                next = readIfReady();
+                if (!next) {
+                    printf("Unknown VT sequence: ^[%d;%d\n", code, modifiers);
+                    return false;
+                }
+            }
+        }
+        if (next == '~') {
+            setModifiers(modifiers, chord);
+            switch (code) {
+              case 1:
+                chord->code = KEY_HOME;
+                return true;
+              case 2:
+                chord->code = KEY_INSERT;
+                return true;
+              case 3:
+                chord->code = KEY_DELETE;
+                return true;
+              case 4:
+                chord->code = KEY_END;
+                return true;
+              case 5:
+                chord->code = KEY_PAGEUP;
+                return true;
+              case 6:
+                chord->code = KEY_PAGEDOWN;
+                return true;
+              case 7:
+                chord->code = KEY_HOME;
+                return true;
+              case 8:
+                chord->code = KEY_END;
+                return true;
+            }
+        }
+        if (isupper(next)) {
+            // Actually an xterm sequence.  The wiki article suggest they should be in
+            // the form ^[A or ^[mA, but I'm seeing arrow keys like ^[1;mA.
+            if (!modifiers)
+                modifiers = code;
+            setModifiers(modifiers, chord);
+            switch (next) {
+              case 'A':
+                chord->code = KEY_UP;
+                return true;
+              case 'B':
+                chord->code = KEY_DOWN;
+                return true;
+              case 'C':
+                chord->code = KEY_RIGHT;
+                return true;
+              case 'D':
+                chord->code = KEY_LEFT;
+                return true;
+              case 'F':
+                chord->code = KEY_END;
+                return true;
+              case 'G':
+                chord->code = KEY_KP5;
+                return true;
+              case 'H':
+                chord->code = KEY_HOME;
+                return true;
+              default:
+                printf("Unknown XTERM sequence: ^[%c\n", next);
+                return false;
+            }
+        }
+        // Somehow, this didn't look right
+        if (modifiers)
+            printf("Unknown VT sequence: ^[%d;%d%c\n", code, modifiers, next);
+        else
+            printf("Unknown VT sequence: ^[%d%c\n", code, next);
+        return false;
+    } else if (alphaChord(next, chord) || symbolChord(next, chord)) {
+        // ^C indicates Alt-C
+        chord->alt = true;
+        return true;
+    } else {
+        printf("Unexpected escape sequence: %x %x\n", c, next);
+        return false;
+    }
 }
 
 void writeEventVals(int fd, unsigned short type, unsigned short code, signed int value) {
