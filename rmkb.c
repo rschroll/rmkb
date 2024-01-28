@@ -113,8 +113,16 @@ int createKeyboardDevice() {
     return fd_key_emulator;
 }
 
+#define ACTIVE    "1"
+#define INACTIVE  "37"
+#define LATCHED   ";4"
+#define UNLATCHED ""
+
 void printStatus() {
-    printf("\r%c%c%c  ", shift_next ? 'S' : 's', ctrl_next ? 'C' : 'c', alt_next ? 'A' : 'a');
+    printf("\r\x1b[0;%s%smS\x1b[0;%s%smC\x1b[0;%s%smA\x1b[0m  ",
+           shift_next ? ACTIVE : INACTIVE, shift_latch ? LATCHED : UNLATCHED,
+           ctrl_next  ? ACTIVE : INACTIVE, ctrl_latch  ? LATCHED : UNLATCHED,
+           alt_next   ? ACTIVE : INACTIVE, alt_latch   ? LATCHED : UNLATCHED);
     fflush(stdout);
 }
 
