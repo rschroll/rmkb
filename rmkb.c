@@ -504,7 +504,6 @@ bool escapeSeq(char c, struct key_chord *chord) {
         }
         int code = 0,
             modifiers = 0;
-        printf("%d\n", code);
         while isdigit(next) {
             // Assume this is a VT sequence
             code = code * 10 + (next - '0');
@@ -669,6 +668,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    printf("rmkb > Press Ctrl-q to enter command mode.\n");
     while (1) {
         printStatus();
         char c = readChar();
