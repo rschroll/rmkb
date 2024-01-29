@@ -10,7 +10,7 @@ Installation and use of rmkb require an SSH connection to your reMarkable device
 
 To download rmkb, SSH into your device and run
 ```
-wget https://github.com/rschroll/rmkb/releases/download/v0.1/rmkb
+wget https://github.com/rschroll/rmkb/releases/download/v0.2/rmkb
 ```
 And that's it!
 

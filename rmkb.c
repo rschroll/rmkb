@@ -18,7 +18,7 @@
 
 #define UINPUT_DEVICE   "/dev/uinput"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 // https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 
