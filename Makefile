@@ -1,7 +1,7 @@
 binary=rmkb
 rmdevice?=remarkable.local
 
-.PHONY: clean
+.PHONY: clean deploy
 
 ${binary}: rmkb.c
 	${CC} -O2 -o ${binary} rmkb.c
