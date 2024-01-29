@@ -93,3 +93,9 @@ However, I had misunderstood the nature of X forwarding.  I had thought the remo
 With HTML and JavaScript, you can actually capture quite a lot of keypress information.  I've seen other projects run a small webserver on the reMarkable, and I can imagine this serving a little page to capture keystrokes, which then simulated on the device.
 
 This does require a few moving pieces, but I think it may be the most feasible of all of these alternative approaches.  I haven't investigated it in too much depth, though.
+
+## Copyright
+
+Copyright 2024 Robert Schroll
+
+rmkb is released under the MIT license. See LICENSE for details.

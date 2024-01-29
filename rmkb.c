@@ -1,3 +1,8 @@
+/*
+ * Copyright 2024 Robert Schroll
+ * Released under the MIT license
+ * See LICENSE for details
+ */
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
