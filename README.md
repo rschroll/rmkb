@@ -12,7 +12,10 @@ To download rmkb, SSH into your device and run
 ```
 wget https://github.com/rschroll/rmkb/releases/download/v0.2/rmkb
 ```
-And that's it!
+Then, make the binary executable:
+```
+chmod a+x rmkb
+```
 
 <details>
 <summary>A note about security</summary>
